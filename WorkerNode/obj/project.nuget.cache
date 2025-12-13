@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "dgSpecHash": "OhLlNgkLI1w=",
+  "dgSpecHash": "mzMu2s6moPA=",
   "success": true,
   "projectFilePath": "D:\\DistributedSystem\\Distributed_Task_Queue\\WorkerNode\\WorkerNode.csproj",
   "expectedPackageFiles": [
@@ -31,7 +31,10 @@
     "C:\\Users\\Ron\\.nuget\\packages\\microsoft.extensions.options\\10.0.0\\microsoft.extensions.options.10.0.0.nupkg.sha512",
     "C:\\Users\\Ron\\.nuget\\packages\\microsoft.extensions.options.configurationextensions\\10.0.0\\microsoft.extensions.options.configurationextensions.10.0.0.nupkg.sha512",
     "C:\\Users\\Ron\\.nuget\\packages\\microsoft.extensions.primitives\\10.0.0\\microsoft.extensions.primitives.10.0.0.nupkg.sha512",
-    "C:\\Users\\Ron\\.nuget\\packages\\system.diagnostics.eventlog\\10.0.0\\system.diagnostics.eventlog.10.0.0.nupkg.sha512"
+    "C:\\Users\\Ron\\.nuget\\packages\\pipelines.sockets.unofficial\\2.2.8\\pipelines.sockets.unofficial.2.2.8.nupkg.sha512",
+    "C:\\Users\\Ron\\.nuget\\packages\\stackexchange.redis\\2.10.1\\stackexchange.redis.2.10.1.nupkg.sha512",
+    "C:\\Users\\Ron\\.nuget\\packages\\system.diagnostics.eventlog\\10.0.0\\system.diagnostics.eventlog.10.0.0.nupkg.sha512",
+    "C:\\Users\\Ron\\.nuget\\packages\\system.io.hashing\\9.0.10\\system.io.hashing.9.0.10.nupkg.sha512"
   ],
   "logs": []
 }

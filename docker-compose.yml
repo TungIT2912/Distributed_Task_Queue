@@ -1,0 +1,88 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - task-queue-network
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: DistributedTaskQueue
+      MYSQL_USER: taskqueue
+      MYSQL_PASSWORD: taskqueue123
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      - task-queue-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  coordinator:
+    build:
+      context: .
+      dockerfile: Coordinator/Dockerfile
+    ports:
+      - "5000:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Server=mysql;Port=3306;Database=DistributedTaskQueue;User=taskqueue;Password=taskqueue123;
+      - Redis__ConnectionString=redis:6379
+    depends_on:
+      - mysql
+      - redis
+    networks:
+      - task-queue-network
+
+  worker-node-1:
+    build:
+      context: .
+      dockerfile: WorkerNode/Dockerfile
+    environment:
+      - Worker__WorkerId=worker-1
+      - Worker__HostAddress=worker-node-1
+      - Worker__Port=8080
+      - Coordinator__BaseUrl=http://coordinator:8080
+      - Redis__ConnectionString=redis:6379
+    depends_on:
+      - coordinator
+      - redis
+    networks:
+      - task-queue-network
+
+  worker-node-2:
+    build:
+      context: .
+      dockerfile: WorkerNode/Dockerfile
+    environment:
+      - Worker__WorkerId=worker-2
+      - Worker__HostAddress=worker-node-2
+      - Worker__Port=8080
+      - Coordinator__BaseUrl=http://coordinator:8080
+      - Redis__ConnectionString=redis:6379
+    depends_on:
+      - coordinator
+      - redis
+    networks:
+      - task-queue-network
+
+volumes:
+  redis-data:
+  mysql-data:
+
+networks:
+  task-queue-network:
+    driver: bridge
+

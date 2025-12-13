@@ -11,10 +11,11 @@
 using System;
 using System.Reflection;
 
+[assembly: Microsoft.Extensions.Configuration.UserSecrets.UserSecretsIdAttribute("dotnet-WorkerNode-b65f552a-ce82-4adf-a36d-f1ea1775e6f4")]
 [assembly: System.Reflection.AssemblyCompanyAttribute("WorkerNode")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+15c5b01ed244b69a3d6fb7000e890f0287ae2a0f")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+eaf3a425ea0199ee1bc0c228f5e6e344d1f46ae1")]
 [assembly: System.Reflection.AssemblyProductAttribute("WorkerNode")]
 [assembly: System.Reflection.AssemblyTitleAttribute("WorkerNode")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
