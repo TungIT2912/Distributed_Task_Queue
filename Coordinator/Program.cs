@@ -7,6 +7,8 @@ using Coordinator.Services;
 using Coordinator.Models;
 using Coordinator.DTOs;
 using StackExchange.Redis;
+using Microsoft.OpenApi.Models;
+using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,26 +17,30 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
-    c.SwaggerDoc("v1", new() { Title = "Distributed Task Queue Coordinator API", Version = "v1" });
+    c.SwaggerDoc("v1", new OpenApiInfo 
+    { 
+        Title = "Distributed Task Queue Coordinator API", 
+        Version = "v1" 
+    });
     
     // Add JWT authentication to Swagger
-    c.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Description = "JWT Authorization header using the Bearer scheme. Example: \"Authorization: Bearer {token}\"",
         Name = "Authorization",
-        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
-        Type = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
+        In = ParameterLocation.Header,
+        Type = SecuritySchemeType.ApiKey,
         Scheme = "Bearer"
     });
     
-    c.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
     {
         {
-            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+            new OpenApiSecurityScheme
             {
-                Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                Reference = new OpenApiReference
                 {
-                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                    Type = ReferenceType.SecurityScheme,
                     Id = "Bearer"
                 }
             },
@@ -88,7 +94,7 @@ builder.Services.AddScoped<WorkerService>();
 builder.Services.AddScoped<TaskService>();
 
 // Add background services
-builder.Services.AddHostedService<Services.StaleTaskMonitor>();
+builder.Services.AddHostedService<Coordinator.Services.StaleTaskMonitor>();
 
 // Add CORS
 builder.Services.AddCors(options =>
@@ -163,6 +169,8 @@ app.MapPost("/api/auth/login", async (LoginRequest request, AuthService authServ
 // Worker registration and monitoring endpoints
 app.MapPost("/api/workers/register", async (WorkerRegistrationRequest request, WorkerService workerService, HttpContext context) =>
 {
+    // Worker registration should NOT require auth - workers need to register first
+    // Optional: If user is authenticated, associate worker with user
     int? userId = null;
     if (context.User.Identity?.IsAuthenticated == true)
     {
@@ -192,8 +200,8 @@ app.MapPost("/api/workers/register", async (WorkerRegistrationRequest request, W
     });
 })
 .WithName("RegisterWorker")
-.WithTags("Workers")
-.RequireAuthorization();
+.WithTags("Workers");
+// Note: Registration does NOT require authorization - workers register before authentication
 
 app.MapGet("/api/workers/heartbeat/{workerId}", async (string workerId, WorkerService workerService) =>
 {
@@ -216,6 +224,65 @@ app.MapGet("/api/workers/peers", async (WorkerService workerService) =>
 .WithTags("Workers")
 .RequireAuthorization();
 
+// Task submission endpoint (write MySQL + publish to Redis Stream)
+app.MapPost("/api/tasks/submit", async (
+    SubmitTaskRequest request,
+    HttpContext context,
+    TaskService taskService,
+    IConnectionMultiplexer redis) =>
+{
+    var userIdClaim = context.User.FindFirst("UserId")?.Value;
+    if (!int.TryParse(userIdClaim, out var userId))
+    {
+        return Results.Unauthorized();
+    }
+
+    var streamName = builder.Configuration.GetSection("TaskQueue")["StreamName"] ?? "task-queue";
+
+    var taskId = Guid.NewGuid().ToString();
+    var createdAt = DateTime.UtcNow;
+
+    // Message schema pushed to Redis Stream
+    var taskMessage = new
+    {
+        TaskId = taskId,
+        TaskType = request.TaskType ?? "Default",
+        Payload = request.Payload ?? "{}",
+        Priority = request.Priority,
+        CreatedAt = createdAt
+    };
+
+    var db = redis.GetDatabase();
+    var entryId = await db.StreamAddAsync(streamName, new NameValueEntry[]
+    {
+        new("task", JsonSerializer.Serialize(taskMessage)),
+        new("taskId", taskId),
+        new("taskType", taskMessage.TaskType),
+        new("priority", request.Priority.ToString()),
+        new("createdAt", createdAt.ToString("O"))
+    });
+
+    // Persist to MySQL for monitoring
+    await taskService.CreateTaskAsync(
+        taskId: taskId,
+        payload: taskMessage.Payload,
+        taskType: taskMessage.TaskType,
+        priority: request.Priority,
+        userId: userId,
+        streamEntryId: entryId.ToString());
+
+    return Results.Ok(new SubmitTaskResponse
+    {
+        TaskId = taskId,
+        StreamEntryId = entryId.ToString(),
+        Status = "Pending",
+        CreatedAt = createdAt
+    });
+})
+.WithName("SubmitTask")
+.WithTags("Tasks")
+.RequireAuthorization();
+
 // Task monitoring endpoints
 app.MapGet("/api/tasks", async (TaskService taskService, HttpContext context, string? status = null, int limit = 100) =>
 {
@@ -227,6 +294,12 @@ app.MapGet("/api/tasks", async (TaskService taskService, HttpContext context, st
         {
             userId = id;
         }
+    }
+
+    // Admin can see all tasks (no user filter)
+    if (context.User.IsInRole("Admin"))
+    {
+        userId = null;
     }
 
     var tasks = await taskService.GetTasksAsync(userId, status, limit);

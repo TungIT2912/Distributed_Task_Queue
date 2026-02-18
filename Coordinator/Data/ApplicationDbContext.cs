@@ -12,7 +12,7 @@ public class ApplicationDbContext : DbContext
 
     public DbSet<User> Users { get; set; }
     public DbSet<Worker> Workers { get; set; }
-    public DbSet<Task> Tasks { get; set; }
+    public DbSet<Models.Task> Tasks { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -32,7 +32,7 @@ public class ApplicationDbContext : DbContext
         });
 
         // Configure Task
-        modelBuilder.Entity<Task>(entity =>
+        modelBuilder.Entity<Models.Task>(entity =>
         {
             entity.HasIndex(e => e.TaskId).IsUnique();
             entity.HasIndex(e => e.Status);
