@@ -86,25 +86,27 @@ public class TaskService
             query = query.Where(t => t.Status == status);
         }
 
-        return await query
+        var tasks = await query
             .OrderByDescending(t => t.CreatedAt)
             .Take(limit)
-            .Select(t => new TaskInfo
-            {
-                Id = t.Id,
-                TaskId = t.TaskId,
-                Status = t.Status,
-                TaskType = t.TaskType,
-                Priority = t.Priority,
-                CreatedAt = t.CreatedAt,
-                StartedAt = t.StartedAt,
-                CompletedAt = t.CompletedAt,
-                Result = t.Result,
-                ErrorMessage = t.ErrorMessage,
-                RetryCount = t.RetryCount,
-                WorkerId = t.Worker?.WorkerId
-            })
+            .Include(t => t.Worker)
             .ToListAsync();
+        
+        return tasks.Select(t => new TaskInfo
+        {
+            Id = t.Id,
+            TaskId = t.TaskId,
+            Status = t.Status,
+            TaskType = t.TaskType,
+            Priority = t.Priority,
+            CreatedAt = t.CreatedAt,
+            StartedAt = t.StartedAt,
+            CompletedAt = t.CompletedAt,
+            Result = t.Result,
+            ErrorMessage = t.ErrorMessage,
+            RetryCount = t.RetryCount,
+            WorkerId = t.Worker?.WorkerId
+        }).ToList();
     }
 
     public async Task<List<Models.Task>> GetStaleTasksAsync(TimeSpan timeout)
@@ -116,7 +118,7 @@ public class TaskService
             .ToListAsync();
     }
 
-    public async Task ReassignStaleTasksAsync(TimeSpan timeout)
+    public async System.Threading.Tasks.Task ReassignStaleTasksAsync(TimeSpan timeout)
     {
         var staleTasks = await GetStaleTasksAsync(timeout);
         

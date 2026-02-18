@@ -105,7 +105,7 @@ public class WorkerService
         return activeWorkers;
     }
 
-    public async Task IncrementTasksProcessedAsync(string workerId)
+    public async System.Threading.Tasks.Task IncrementTasksProcessedAsync(string workerId)
     {
         var worker = await _context.Workers.FirstOrDefaultAsync(w => w.WorkerId == workerId);
         if (worker != null)
@@ -115,7 +115,7 @@ public class WorkerService
         }
     }
 
-    public async Task IncrementTasksFailedAsync(string workerId)
+    public async System.Threading.Tasks.Task IncrementTasksFailedAsync(string workerId)
     {
         var worker = await _context.Workers.FirstOrDefaultAsync(w => w.WorkerId == workerId);
         if (worker != null)

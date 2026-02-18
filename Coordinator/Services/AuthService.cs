@@ -31,13 +31,26 @@ public class AuthService
             return null;
         }
 
+        var requestedRole = (request.Role ?? "User").Trim();
+        if (string.IsNullOrWhiteSpace(requestedRole))
+        {
+            requestedRole = "User";
+        }
+
+        // Only allow self-registration for these roles
+        if (!string.Equals(requestedRole, "User", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(requestedRole, "Worker", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
         // Create new user
         var user = new User
         {
             Username = request.Username,
             Email = request.Email,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
-            Role = "User"
+            Role = char.ToUpperInvariant(requestedRole[0]) + requestedRole.Substring(1).ToLowerInvariant()
         };
 
         _context.Users.Add(user);
