@@ -15,7 +15,7 @@ public class CoordinatorClient
         _baseUrl = configuration.GetSection("Coordinator")["BaseUrl"] ?? "http://localhost:5000";
     }
 
-    public async Task<bool> RegisterWorkerAsync(string workerId, string? hostAddress, int port)
+    public async Task<WorkerInfo?> RegisterWorkerAsync(string workerId, string? hostAddress, int port)
     {
         try
         {
@@ -27,12 +27,17 @@ public class CoordinatorClient
             };
 
             var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/api/workers/register", request);
-            return response.IsSuccessStatusCode;
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            return await response.Content.ReadFromJsonAsync<WorkerInfo>();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to register worker with coordinator");
-            return false;
+            _logger.LogWarning(ex, "Failed to register worker with coordinator. Worker will continue but coordinator features may be unavailable.");
+            return null;
         }
     }
 
@@ -45,7 +50,7 @@ public class CoordinatorClient
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to send heartbeat to coordinator");
+            _logger.LogDebug(ex, "Failed to send heartbeat to coordinator (coordinator may be unavailable)");
             return false;
         }
     }
@@ -63,7 +68,7 @@ public class CoordinatorClient
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to get active peers from coordinator");
+            _logger.LogDebug(ex, "Failed to get active peers from coordinator (coordinator may be unavailable)");
         }
         return new List<WorkerInfo>();
     }
@@ -85,7 +90,7 @@ public class CoordinatorClient
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to update task status in coordinator");
+            _logger.LogWarning(ex, "Failed to update task status in coordinator (coordinator may be unavailable)");
             return false;
         }
     }

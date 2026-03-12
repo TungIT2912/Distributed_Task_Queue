@@ -1,7 +1,7 @@
 ﻿using System.Net.Http.Json;
 using System.Text.Json;
 using StackExchange.Redis;
-using JobProducer.Models;
+using Microsoft.Extensions.Configuration;
 
 var configuration = new ConfigurationBuilder()
     .SetBasePath(Directory.GetCurrentDirectory())
@@ -13,7 +13,7 @@ var redis = ConnectionMultiplexer.Connect(redisConnectionString);
 var db = redis.GetDatabase();
 
 var streamName = configuration.GetSection("TaskQueue")["StreamName"] ?? "task-queue";
-var coordinatorUrl = configuration.GetSection("Coordinator")["BaseUrl"] ?? "http://localhost:5000";
+var coordinatorUrl = configuration.GetSection("Coordinator")["BaseUrl"] ?? "http://localhost:5280";
 
 Console.WriteLine("Distributed Task Queue - Job Producer");
 Console.WriteLine("====================================");
@@ -81,35 +81,46 @@ while (true)
 
     try
     {
-        // Add to Redis Stream
-        var entryId = await db.StreamAddAsync(streamName, new NameValueEntry[]
-        {
-            new("task", taskJson),
-            new("taskId", taskId),
-            new("taskType", taskType),
-            new("priority", priority.ToString()),
-            new("createdAt", task.CreatedAt.ToString("O"))
-        });
-
-        Console.WriteLine($"Task {taskId} submitted successfully! Entry ID: {entryId}");
-        Console.WriteLine();
-
-        // Optionally register task with coordinator
         if (token != null)
         {
-            try
-            {
-                using var httpClient = new HttpClient();
-                httpClient.DefaultRequestHeaders.Authorization = 
-                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+            // Preferred path: submit via Coordinator so MySQL tracking is correct
+            using var httpClient = new HttpClient();
+            httpClient.DefaultRequestHeaders.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
 
-                // Note: Coordinator will track tasks when workers process them
-                // For now, we just log the submission
-            }
-            catch (Exception ex)
+            var submitRes = await httpClient.PostAsJsonAsync($"{coordinatorUrl}/api/tasks/submit", new
             {
-                Console.WriteLine($"Warning: Could not notify coordinator: {ex.Message}");
+                TaskType = taskType,
+                Priority = priority,
+                Payload = payloadInput
+            });
+
+            if (!submitRes.IsSuccessStatusCode)
+            {
+                var body = await submitRes.Content.ReadAsStringAsync();
+                Console.WriteLine($"Error submitting task via coordinator: {(int)submitRes.StatusCode} {submitRes.StatusCode}");
+                Console.WriteLine(body);
+                continue;
             }
+
+            var submitBody = await submitRes.Content.ReadFromJsonAsync<SubmitTaskResponse>();
+            Console.WriteLine($"Task submitted via coordinator! TaskId: {submitBody?.TaskId}, StreamEntryId: {submitBody?.StreamEntryId}");
+            Console.WriteLine();
+        }
+        else
+        {
+            // Fallback path: direct Redis Streams submit (no MySQL tracking)
+            var entryId = await db.StreamAddAsync(streamName, new NameValueEntry[]
+            {
+                new("task", taskJson),
+                new("taskId", taskId),
+                new("taskType", taskType),
+                new("priority", priority.ToString()),
+                new("createdAt", task.CreatedAt.ToString("O"))
+            });
+
+            Console.WriteLine($"Task {taskId} submitted to Redis Stream. Entry ID: {entryId}");
+            Console.WriteLine();
         }
     }
     catch (Exception ex)
@@ -159,4 +170,12 @@ public class AuthResponse
     public string Username { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty;
     public DateTime ExpiresAt { get; set; }
+}
+
+public class SubmitTaskResponse
+{
+    public string TaskId { get; set; } = string.Empty;
+    public string StreamEntryId { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
 }

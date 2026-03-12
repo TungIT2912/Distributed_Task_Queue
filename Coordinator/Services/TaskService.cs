@@ -29,7 +29,10 @@ public class TaskService
             UserId = userId,
             StreamEntryId = streamEntryId
         };
-
+        Console.WriteLine($"Data user upload");
+          Console.WriteLine($"TaskId: {taskId}");
+        Console.WriteLine($"Payload: {payload}");
+        Console.WriteLine($"TaskType: {taskType}");
         _context.Tasks.Add(task);
         await _context.SaveChangesAsync();
         return task;

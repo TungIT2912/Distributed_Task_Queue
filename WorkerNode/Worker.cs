@@ -18,6 +18,13 @@ public class Worker : BackgroundService
     private readonly string _consumerName;
     private readonly int _batchSize;
     private readonly int _blockTimeMs;
+    private readonly int _autoClaimIntervalMs;
+    private readonly int _autoClaimMinIdleMs;
+    private readonly int _doneKeyTtlHours;
+
+    private int? _workerDbId;
+    private string _autoClaimStartId = "0-0";
+    private DateTime _lastAutoClaimAt = DateTime.MinValue;
 
     public Worker(
         ILogger<Worker> logger,
@@ -41,17 +48,29 @@ public class Worker : BackgroundService
         _consumerName = queueConfig["ConsumerName"] ?? _workerId;
         _batchSize = int.Parse(queueConfig["BatchSize"] ?? "10");
         _blockTimeMs = int.Parse(queueConfig["BlockTimeMs"] ?? "5000");
+        _autoClaimIntervalMs = int.Parse(queueConfig["AutoClaimIntervalMs"] ?? "5000");
+        _autoClaimMinIdleMs = int.Parse(queueConfig["AutoClaimMinIdleMs"] ?? "60000");
+        _doneKeyTtlHours = int.Parse(queueConfig["DoneKeyTtlHours"] ?? "168");
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("Worker {WorkerId} starting...", _workerId);
 
-        // Register with coordinator
+        // Register with coordinator (non-blocking - worker continues even if coordinator is unavailable)
         var hostAddress = _configuration.GetSection("Worker")["HostAddress"];
         var port = int.Parse(_configuration.GetSection("Worker")["Port"] ?? "0");
         
-        await _coordinatorClient.RegisterWorkerAsync(_workerId, hostAddress, port);
+        var registeredWorker = await _coordinatorClient.RegisterWorkerAsync(_workerId, hostAddress, port);
+        if (registeredWorker != null)
+        {
+            _logger.LogInformation("Successfully registered with coordinator");
+            _workerDbId = registeredWorker.Id;
+        }
+        else
+        {
+            _logger.LogWarning("Coordinator unavailable. Worker will continue processing tasks from Redis but coordinator features are disabled.");
+        }
 
         // Initialize Redis Stream consumer group
         await InitializeConsumerGroupAsync();
@@ -94,7 +113,11 @@ public class Worker : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error sending heartbeat");
+                // Heartbeat is best-effort; don't spam logs when coordinator is down or app is shutting down
+                if (!stoppingToken.IsCancellationRequested)
+                {
+                    _logger.LogDebug(ex, "Error sending heartbeat");
+                }
                 await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
             }
         }
@@ -108,6 +131,20 @@ public class Worker : BackgroundService
         {
             try
             {
+                // Periodically reclaim pending messages from failed/stuck consumers (distributed recovery)
+                if ((DateTime.UtcNow - _lastAutoClaimAt).TotalMilliseconds >= _autoClaimIntervalMs)
+                {
+                    _lastAutoClaimAt = DateTime.UtcNow;
+                    var claimed = await AutoClaimPendingAsync(db, stoppingToken);
+                    if (claimed.Count > 0)
+                    {
+                        _logger.LogInformation("Auto-claimed {Count} pending tasks for recovery", claimed.Count);
+
+                        var claimTasks = claimed.Select(entry => ProcessMessageAsync(db, entry, stoppingToken));
+                        await Task.WhenAll(claimTasks);
+                    }
+                }
+
                 // Read messages from the stream
                 var messages = await db.StreamReadGroupAsync(
                     _streamName,
@@ -144,6 +181,90 @@ public class Worker : BackgroundService
         }
     }
 
+    private async Task<List<StreamEntry>> AutoClaimPendingAsync(IDatabase db, CancellationToken stoppingToken)
+    {
+        // Uses Redis XAUTOCLAIM to recover PENDING messages that have been idle too long.
+        // Reply format: [nextStartId, [ [id, [field, value, ...]], ... ], [deletedId, ...]]
+        var result = await db.ExecuteAsync(
+            "XAUTOCLAIM",
+            _streamName,
+            _consumerGroup,
+            _consumerName,
+            _autoClaimMinIdleMs,
+            _autoClaimStartId,
+            "COUNT",
+            _batchSize);
+
+        if (result.IsNull)
+        {
+            return new List<StreamEntry>();
+        }
+
+        var outer = (RedisResult[])result;
+        if (outer.Length < 2)
+        {
+            return new List<StreamEntry>();
+        }
+
+        _autoClaimStartId = outer[0].ToString() ?? "0-0";
+
+        var claimedRaw = outer[1];
+        if (claimedRaw.IsNull)
+        {
+            return new List<StreamEntry>();
+        }
+
+        var claimed = (RedisResult[])claimedRaw;
+        var entries = new List<StreamEntry>(claimed.Length);
+
+        foreach (var item in claimed)
+        {
+            if (item.IsNull) continue;
+
+            var entry = (RedisResult[])item;
+            if (entry.Length < 2) continue;
+
+            var id = entry[0].ToString();
+            if (string.IsNullOrWhiteSpace(id)) continue;
+
+            var valuesObj = entry[1];
+            if (valuesObj.IsNull)
+            {
+                entries.Add(new StreamEntry(id, Array.Empty<NameValueEntry>()));
+                continue;
+            }
+
+            // Handle both possible shapes:
+            // - [field, value, field, value, ...]
+            // - [[field,value],[field,value],...]
+            var valuesArr = (RedisResult[])valuesObj;
+            var nve = new List<NameValueEntry>();
+
+            if (valuesArr.Length > 0 && valuesArr[0].Type == ResultType.MultiBulk)
+            {
+                foreach (var pairObj in valuesArr)
+                {
+                    var pair = (RedisResult[])pairObj;
+                    if (pair.Length >= 2)
+                    {
+                        nve.Add(new NameValueEntry(pair[0].ToString(), pair[1].ToString()));
+                    }
+                }
+            }
+            else
+            {
+                for (var i = 0; i + 1 < valuesArr.Length; i += 2)
+                {
+                    nve.Add(new NameValueEntry(valuesArr[i].ToString(), valuesArr[i + 1].ToString()));
+                }
+            }
+
+            entries.Add(new StreamEntry(id, nve.ToArray()));
+        }
+
+        return entries;
+    }
+
     private async Task ProcessMessageAsync(IDatabase db, StreamEntry message, CancellationToken stoppingToken)
     {
         var entryId = message.Id.ToString();
@@ -168,10 +289,17 @@ public class Worker : BackgroundService
                 return;
             }
 
-            // Get worker ID from database for status update
-            var workerInfo = await _coordinatorClient.GetActivePeersAsync();
-            var currentWorker = workerInfo.FirstOrDefault(w => w.WorkerId == _workerId);
-            int? workerDbId = currentWorker?.Id;
+            // Idempotency: if we've already completed this task, just ACK and stop.
+            var doneKey = $"task:done:{task.TaskId}";
+            var alreadyDone = await db.StringGetAsync(doneKey);
+            if (alreadyDone.HasValue)
+            {
+                _logger.LogInformation("Task {TaskId} already done. Acknowledging message {EntryId}", task.TaskId, entryId);
+                await AcknowledgeMessageAsync(db, entryId);
+                return;
+            }
+
+            int? workerDbId = _workerDbId;
 
             // Update task status to Processing
             await _coordinatorClient.UpdateTaskStatusAsync(
@@ -190,6 +318,9 @@ public class Worker : BackgroundService
                 
                 // Store result in Redis
                 await StoreTaskResultAsync(db, task.TaskId, result);
+
+                // Mark done (effectively-once)
+                await db.StringSetAsync(doneKey, "1", TimeSpan.FromHours(_doneKeyTtlHours));
                 
                 // Update task status in coordinator
                 await _coordinatorClient.UpdateTaskStatusAsync(
