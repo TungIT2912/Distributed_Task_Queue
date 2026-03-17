@@ -21,6 +21,9 @@ public class Worker : BackgroundService
     private readonly int _autoClaimIntervalMs;
     private readonly int _autoClaimMinIdleMs;
     private readonly int _doneKeyTtlHours;
+    private readonly string _mode;
+    private readonly bool _interactiveRequeueOnSkip;
+    private readonly bool _interactiveDisableAutoClaim;
 
     private int? _workerDbId;
     private string _autoClaimStartId = "0-0";
@@ -41,6 +44,9 @@ public class Worker : BackgroundService
 
         var workerConfig = _configuration.GetSection("Worker");
         _workerId = workerConfig["WorkerId"] ?? $"worker-{Guid.NewGuid()}";
+        _mode = (workerConfig["Mode"] ?? "auto").Trim().ToLowerInvariant();
+        _interactiveRequeueOnSkip = bool.TryParse(workerConfig["InteractiveRequeueOnSkip"], out var requeue) ? requeue : true;
+        _interactiveDisableAutoClaim = bool.TryParse(workerConfig["InteractiveDisableAutoClaim"], out var disableAutoClaim) ? disableAutoClaim : false;
         
         var queueConfig = _configuration.GetSection("TaskQueue");
         _streamName = queueConfig["StreamName"] ?? "task-queue";
@@ -56,6 +62,7 @@ public class Worker : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("Worker {WorkerId} starting...", _workerId);
+        _logger.LogInformation("Worker mode: {Mode}", _mode);
 
         // Register with coordinator (non-blocking - worker continues even if coordinator is unavailable)
         var hostAddress = _configuration.GetSection("Worker")["HostAddress"];
@@ -132,7 +139,8 @@ public class Worker : BackgroundService
             try
             {
                 // Periodically reclaim pending messages from failed/stuck consumers (distributed recovery)
-                if ((DateTime.UtcNow - _lastAutoClaimAt).TotalMilliseconds >= _autoClaimIntervalMs)
+                if (!_interactiveDisableAutoClaim &&
+                    (DateTime.UtcNow - _lastAutoClaimAt).TotalMilliseconds >= _autoClaimIntervalMs)
                 {
                     _lastAutoClaimAt = DateTime.UtcNow;
                     var claimed = await AutoClaimPendingAsync(db, stoppingToken);
@@ -140,8 +148,19 @@ public class Worker : BackgroundService
                     {
                         _logger.LogInformation("Auto-claimed {Count} pending tasks for recovery", claimed.Count);
 
-                        var claimTasks = claimed.Select(entry => ProcessMessageAsync(db, entry, stoppingToken));
-                        await Task.WhenAll(claimTasks);
+                        if (_mode == "interactive")
+                        {
+                            // Interactive mode: prompt sequentially to avoid mixed console prompts
+                            foreach (var entry in claimed)
+                            {
+                                await ProcessMessageAsync(db, entry, stoppingToken);
+                            }
+                        }
+                        else
+                        {
+                            var claimTasks = claimed.Select(entry => ProcessMessageAsync(db, entry, stoppingToken));
+                            await Task.WhenAll(claimTasks);
+                        }
                     }
                 }
 
@@ -151,7 +170,7 @@ public class Worker : BackgroundService
                     _consumerGroup,
                     _consumerName,
                     position: StreamPosition.NewMessages,
-                    count: _batchSize,
+                    count: _mode == "interactive" ? 1 : _batchSize,
                     noAck: false,
                     flags: CommandFlags.None);
 
@@ -164,14 +183,22 @@ public class Worker : BackgroundService
                 _logger.LogInformation("Received {Count} tasks from stream", messages.Length);
 
                 // Process each message
-                var tasks = new List<Task>();
-
-                foreach (var message in messages)
+                if (_mode == "interactive")
                 {
-                    tasks.Add(ProcessMessageAsync(db, message, stoppingToken));
+                    foreach (var message in messages)
+                    {
+                        await ProcessMessageAsync(db, message, stoppingToken);
+                    }
                 }
-
-                await Task.WhenAll(tasks);
+                else
+                {
+                    var tasks = new List<Task>();
+                    foreach (var message in messages)
+                    {
+                        tasks.Add(ProcessMessageAsync(db, message, stoppingToken));
+                    }
+                    await Task.WhenAll(tasks);
+                }
             }
             catch (Exception ex)
             {
@@ -301,13 +328,25 @@ public class Worker : BackgroundService
 
             int? workerDbId = _workerDbId;
 
-            // Update task status to Processing
-            await _coordinatorClient.UpdateTaskStatusAsync(
-                task.TaskId, 
-                "Processing", 
-                null, 
-                null, 
-                workerDbId);
+            if (_mode == "interactive")
+            {
+                var approve = PromptApproveTask(task, entryId);
+                if (!approve)
+                {
+                    _logger.LogInformation("Skipped task {TaskId} (entry {EntryId}) by operator choice", task.TaskId, entryId);
+
+                    if (_interactiveRequeueOnSkip)
+                    {
+                        await RequeueMessageAsync(db, message, task, entryId);
+                        await AcknowledgeMessageAsync(db, entryId);
+                    }
+
+                    return;
+                }
+            }
+
+            // Update task status to Processing only when the worker actually starts work
+            await _coordinatorClient.UpdateTaskStatusAsync(task.TaskId, "Processing", _workerId, null, null, workerDbId);
 
             // Process the task
             var result = await _taskProcessor.ProcessTaskAsync(task);
@@ -324,10 +363,11 @@ public class Worker : BackgroundService
                 
                 // Update task status in coordinator
                 await _coordinatorClient.UpdateTaskStatusAsync(
-                    task.TaskId, 
-                    "Completed", 
-                    result.Result, 
-                    null, 
+                    task.TaskId,
+                    "Completed",
+                    _workerId,
+                    result.Result,
+                    null,
                     workerDbId);
             }
             else
@@ -339,10 +379,11 @@ public class Worker : BackgroundService
                 
                 // Update task status in coordinator
                 await _coordinatorClient.UpdateTaskStatusAsync(
-                    task.TaskId, 
-                    "Failed", 
-                    null, 
-                    result.ErrorMessage, 
+                    task.TaskId,
+                    "Failed",
+                    _workerId,
+                    null,
+                    result.ErrorMessage,
                     workerDbId);
             }
 
@@ -355,6 +396,67 @@ public class Worker : BackgroundService
             
             // Don't acknowledge on error - let it be retried
             // The message will be claimed by another consumer after PENDING timeout
+        }
+    }
+
+    private bool PromptApproveTask(TaskMessage task, string entryId)
+    {
+        try
+        {
+            Console.WriteLine();
+            Console.WriteLine("────────────────────────────────────────");
+            Console.WriteLine($"[INTERACTIVE] Worker {_workerId}");
+            Console.WriteLine($"StreamEntryId: {entryId}");
+            Console.WriteLine($"TaskId:        {task.TaskId}");
+            Console.WriteLine($"TaskType:      {task.TaskType}");
+            Console.WriteLine($"Priority:      {task.Priority}");
+            Console.WriteLine("Process this task now? (y/n): ");
+            var line = Console.ReadLine();
+            return string.Equals(line?.Trim(), "y", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            // If console is not available, fall back to auto-processing (safer than deadlocking tasks)
+            return true;
+        }
+    }
+
+    private async Task RequeueMessageAsync(IDatabase db, StreamEntry originalMessage, TaskMessage task, string originalEntryId)
+    {
+        try
+        {
+            // Requeue by creating a new stream entry. This avoids "locking" the task to this consumer.
+            // Idempotency is still guaranteed by task:done:{taskId} check before completion.
+            var now = DateTime.UtcNow;
+            var values = new List<NameValueEntry>(originalMessage.Values.Length + 4);
+
+            // Keep existing fields when present
+            foreach (var v in originalMessage.Values)
+            {
+                values.Add(v);
+            }
+
+            // Ensure required fields exist
+            if (!values.Any(v => v.Name == "task"))
+                values.Add(new NameValueEntry("task", JsonSerializer.Serialize(task)));
+            if (!values.Any(v => v.Name == "taskId"))
+                values.Add(new NameValueEntry("taskId", task.TaskId));
+            if (!values.Any(v => v.Name == "taskType"))
+                values.Add(new NameValueEntry("taskType", task.TaskType));
+            if (!values.Any(v => v.Name == "priority"))
+                values.Add(new NameValueEntry("priority", task.Priority.ToString()));
+            if (!values.Any(v => v.Name == "createdAt"))
+                values.Add(new NameValueEntry("createdAt", task.CreatedAt.ToString("O")));
+
+            values.Add(new NameValueEntry("requeuedFrom", originalEntryId));
+            values.Add(new NameValueEntry("requeuedAt", now.ToString("O")));
+
+            var newEntryId = await db.StreamAddAsync(_streamName, values.ToArray());
+            _logger.LogInformation("Requeued task {TaskId} from {Old} to {New}", task.TaskId, originalEntryId, newEntryId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to requeue skipped task {TaskId} (entry {EntryId})", task.TaskId, originalEntryId);
         }
     }
 

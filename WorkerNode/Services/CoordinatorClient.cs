@@ -82,7 +82,31 @@ public class CoordinatorClient
                 Status = status,
                 Result = result,
                 ErrorMessage = errorMessage,
-                WorkerId = workerId
+                WorkerId = workerId,
+                WorkerKey = (string?)null
+            };
+
+            var response = await _httpClient.PutAsJsonAsync($"{_baseUrl}/api/tasks/{taskId}/status", request);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to update task status in coordinator (coordinator may be unavailable)");
+            return false;
+        }
+    }
+
+    public async Task<bool> UpdateTaskStatusAsync(string taskId, string status, string workerKey, string? result = null, string? errorMessage = null, int? workerId = null)
+    {
+        try
+        {
+            var request = new
+            {
+                Status = status,
+                Result = result,
+                ErrorMessage = errorMessage,
+                WorkerId = workerId,
+                WorkerKey = workerKey
             };
 
             var response = await _httpClient.PutAsJsonAsync($"{_baseUrl}/api/tasks/{taskId}/status", request);

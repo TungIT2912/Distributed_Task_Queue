@@ -38,7 +38,13 @@ public class TaskService
         return task;
     }
 
-    public async Task<Models.Task?> UpdateTaskStatusAsync(string taskId, string status, string? result = null, string? errorMessage = null, int? workerId = null)
+    public async Task<Models.Task?> UpdateTaskStatusAsync(
+        string taskId,
+        string status,
+        string? result = null,
+        string? errorMessage = null,
+        int? workerId = null,
+        string? workerKey = null)
     {
         var task = await _context.Tasks.FirstOrDefaultAsync(t => t.TaskId == taskId);
         
@@ -69,6 +75,15 @@ public class TaskService
         if (workerId.HasValue)
         {
             task.WorkerId = workerId.Value;
+        }
+        else if (!string.IsNullOrWhiteSpace(workerKey))
+        {
+            // Allow workers to report their stable string id (Worker.WorkerId) and resolve to DB id.
+            var worker = await _context.Workers.FirstOrDefaultAsync(w => w.WorkerId == workerKey);
+            if (worker != null)
+            {
+                task.WorkerId = worker.Id;
+            }
         }
 
         await _context.SaveChangesAsync();

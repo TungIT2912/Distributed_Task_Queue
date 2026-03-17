@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "D:\\DistributedSystem\\Distributed_Task_Queue\\Coordinator\\Coordinator.csproj": {}
+    "d:\\DistributedSystem\\Distributed_Task_Queue\\Coordinator\\Coordinator.csproj": {}
   },
   "projects": {
-    "D:\\DistributedSystem\\Distributed_Task_Queue\\Coordinator\\Coordinator.csproj": {
+    "d:\\DistributedSystem\\Distributed_Task_Queue\\Coordinator\\Coordinator.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "D:\\DistributedSystem\\Distributed_Task_Queue\\Coordinator\\Coordinator.csproj",
+        "projectUniqueName": "d:\\DistributedSystem\\Distributed_Task_Queue\\Coordinator\\Coordinator.csproj",
         "projectName": "Coordinator",
-        "projectPath": "D:\\DistributedSystem\\Distributed_Task_Queue\\Coordinator\\Coordinator.csproj",
+        "projectPath": "d:\\DistributedSystem\\Distributed_Task_Queue\\Coordinator\\Coordinator.csproj",
         "packagesPath": "C:\\Users\\Ron\\.nuget\\packages\\",
-        "outputPath": "D:\\DistributedSystem\\Distributed_Task_Queue\\Coordinator\\obj\\",
+        "outputPath": "d:\\DistributedSystem\\Distributed_Task_Queue\\Coordinator\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "D:\\CodeProgram\\VisualStudio\\VisualShare\\NuGetPackages"
