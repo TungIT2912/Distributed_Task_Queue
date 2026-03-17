@@ -18,12 +18,10 @@ public class WorkerService
 
     public async Task<Worker?> RegisterWorkerAsync(WorkerRegistrationRequest request, int? userId = null)
     {
-        // Check if worker already exists
         var existingWorker = await _context.Workers.FirstOrDefaultAsync(w => w.WorkerId == request.WorkerId);
         
         if (existingWorker != null)
         {
-            // Update existing worker
             existingWorker.Status = "Active";
             existingWorker.HostAddress = request.HostAddress;
             existingWorker.Port = request.Port;
@@ -33,7 +31,6 @@ public class WorkerService
             return existingWorker;
         }
 
-        // Create new worker
         var worker = new Worker
         {
             WorkerId = request.WorkerId,
@@ -69,9 +66,8 @@ public class WorkerService
 
     public async Task<List<WorkerInfo>> GetActiveWorkersAsync()
     {
-        var cutoffTime = DateTime.UtcNow.AddMinutes(-5); // Consider workers inactive if no heartbeat in 5 minutes
+        var cutoffTime = DateTime.UtcNow.AddMinutes(-5); 
         
-        // Mark stale workers as inactive
         var staleWorkers = await _context.Workers
             .Where(w => w.Status == "Active" && w.LastHeartbeat < cutoffTime)
             .ToListAsync();

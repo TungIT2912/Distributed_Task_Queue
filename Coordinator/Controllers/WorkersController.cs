@@ -14,7 +14,6 @@ public class WorkersController : ControllerBase
         [FromBody] WorkerRegistrationRequest request,
         [FromServices] WorkerService workerService)
     {
-        // Registration should NOT require auth; if auth exists, associate worker with user
         int? userId = null;
         if (User.Identity?.IsAuthenticated == true)
         {

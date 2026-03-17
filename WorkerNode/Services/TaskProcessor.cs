@@ -135,9 +135,6 @@ public class TaskProcessor
         }
     }
 
-    // ──────────────────────────────────────────────
-    // Compute: { "operation": "add", "a": 5, "b": 3 }
-    // ──────────────────────────────────────────────
     private async Task<string> ProcessComputeTaskAsync(Dictionary<string, JsonElement>? payload)
     {
         await Task.Delay(300);
@@ -173,9 +170,6 @@ public class TaskProcessor
         });
     }
 
-    // ──────────────────────────────────────────────
-    // DataProcessing: { "inputData": [1,2,3,4,5], "action": "sum" | "average" | "max" | "min" }
-    // ──────────────────────────────────────────────
     private async Task<string> ProcessDataTaskAsync(Dictionary<string, JsonElement>? payload)
     {
         await Task.Delay(500);
@@ -215,10 +209,6 @@ public class TaskProcessor
         });
     }
 
-    // ──────────────────────────────────────────────
-    // Email: { "to": "user@example.com", "subject": "Hello", "body": "..." }
-    // (Hiện tại log ra console, bạn có thể tích hợp SMTP/MailKit sau)
-    // ──────────────────────────────────────────────
     private async Task<string> ProcessEmailTaskAsync(Dictionary<string, JsonElement>? payload)
     {
         await Task.Delay(300);
@@ -239,8 +229,6 @@ public class TaskProcessor
         var subject = subjectEl.GetString() ?? "";
         var body    = bodyEl.GetString()    ?? "";
 
-        // TODO: tích hợp SMTP thật ở đây
-        // await _smtpService.SendAsync(to, subject, body);
         _logger.LogInformation("📧 [SIMULATED] Sending email to {To} | Subject: {Subject}", to, subject);
 
         return JsonSerializer.Serialize(new
@@ -251,10 +239,7 @@ public class TaskProcessor
             SentAt = DateTime.UtcNow
         });
     }
-
-    // ──────────────────────────────────────────────
-    // Default: { "data": "anything" }
-    // ──────────────────────────────────────────────
+    
     private async Task<string> ProcessDefaultTaskAsync(Dictionary<string, JsonElement>? payload)
     {
         await Task.Delay(200);

@@ -64,8 +64,7 @@ public class Worker : BackgroundService
         _logger.LogInformation("Worker {WorkerId} starting...", _workerId);
         _logger.LogInformation("Worker mode: {Mode}", _mode);
 
-        // Register with coordinator (non-blocking - worker continues even if coordinator is unavailable)
-        var hostAddress = _configuration.GetSection("Worker")["HostAddress"];
+         var hostAddress = _configuration.GetSection("Worker")["HostAddress"];
         var port = int.Parse(_configuration.GetSection("Worker")["Port"] ?? "0");
         
         var registeredWorker = await _coordinatorClient.RegisterWorkerAsync(_workerId, hostAddress, port);

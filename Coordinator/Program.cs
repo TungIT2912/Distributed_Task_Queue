@@ -12,7 +12,6 @@ using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
@@ -23,7 +22,6 @@ builder.Services.AddSwaggerGen(c =>
         Version = "v1" 
     });
     
-    // Add JWT authentication to Swagger
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Description = "JWT Authorization header using the Bearer scheme. Example: \"Authorization: Bearer {token}\"",
@@ -49,21 +47,18 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-// Add Entity Framework
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseMySql(
         builder.Configuration.GetConnectionString("DefaultConnection"),
         new MySqlServerVersion(new Version(8, 0, 21))
     ));
 
-// Add Redis
 builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
 {
     var connectionString = builder.Configuration.GetSection("Redis")["ConnectionString"] ?? "localhost:6379";
     return StackExchange.Redis.ConnectionMultiplexer.Connect(connectionString);
 });
 
-// Add JWT Authentication
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
 var secretKey = jwtSettings["SecretKey"] ?? "YourSuperSecretKeyThatShouldBeAtLeast32CharactersLong!";
 
@@ -88,15 +83,12 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddAuthorization();
 
-// Add custom services
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<WorkerService>();
 builder.Services.AddScoped<TaskService>();
 
-// Add background services
 builder.Services.AddHostedService<Coordinator.Services.StaleTaskMonitor>();
 
-// Add CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
@@ -109,7 +101,6 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -120,7 +111,6 @@ app.UseCors("AllowAll");
 app.UseAuthentication();
 app.UseAuthorization();
 
-// Ensure database is created
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();

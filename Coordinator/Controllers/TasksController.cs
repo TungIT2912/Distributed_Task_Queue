@@ -19,7 +19,6 @@ public class TasksController : ControllerBase
         _configuration = configuration;
     }
 
-    // write MySQL + publish to Redis Stream
     [Authorize]
     [HttpPost("submit")]
     public async Task<IActionResult> Submit(
@@ -128,7 +127,6 @@ public class TasksController : ControllerBase
         return Ok(task);
     }
 
-    // NOTE: intentionally no [Authorize] because workers may not have JWT.
     [HttpPut("{taskId}/status")]
     public async Task<IActionResult> UpdateStatus(
         [FromRoute] string taskId,

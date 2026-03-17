@@ -25,7 +25,6 @@ public class AuthService
 
     public async Task<AuthResponse?> RegisterAsync(RegisterRequest request)
     {
-        // Check if user already exists
         if (await _context.Users.AnyAsync(u => u.Username == request.Username || u.Email == request.Email))
         {
             return null;
@@ -36,15 +35,12 @@ public class AuthService
         {
             requestedRole = "User";
         }
-
-        // Only allow self-registration for these roles
         if (!string.Equals(requestedRole, "User", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(requestedRole, "Worker", StringComparison.OrdinalIgnoreCase))
         {
             return null;
         }
 
-        // Create new user
         var user = new User
         {
             Username = request.Username,
@@ -68,7 +64,6 @@ public class AuthService
             return null;
         }
 
-        // Update last login
         user.LastLoginAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
 
