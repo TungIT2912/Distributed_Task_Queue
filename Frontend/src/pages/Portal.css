@@ -1,0 +1,136 @@
+.portal {
+  color: white;
+}
+
+.portal h1 {
+  font-size: 2.5rem;
+  margin-bottom: 1rem;
+}
+
+.portal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: 1.5rem;
+}
+
+.card {
+  background: rgba(255, 255, 255, 0.96);
+  color: #222;
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+}
+
+.card h2 {
+  margin-bottom: 1rem;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-weight: 600;
+  color: #444;
+}
+
+.form input,
+.form select,
+.form textarea {
+  border: 2px solid #e6e6e6;
+  border-radius: 10px;
+  padding: 0.75rem;
+  font-size: 1rem;
+}
+
+.form button {
+  margin-top: 0.25rem;
+  border: none;
+  border-radius: 12px;
+  padding: 0.8rem 1rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.form button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.note {
+  background: #eef7ff;
+  border: 1px solid #cfe7ff;
+  color: #135;
+  padding: 0.75rem;
+  border-radius: 12px;
+  font-weight: 600;
+}
+
+.muted {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.list-item {
+  border: 1px solid #eee;
+  background: #fff;
+  border-radius: 12px;
+  padding: 0.75rem;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.badge {
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: white;
+  background: #777;
+}
+
+.badge.completed { background: #2e7d32; }
+.badge.failed { background: #c62828; }
+.badge.processing { background: #ef6c00; }
+.badge.pending { background: #1565c0; }
+.badge.reassigned { background: #6a1b9a; }
+
+.error {
+  margin-top: 0.5rem;
+  color: #b71c1c;
+  font-weight: 700;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.section {
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+

@@ -1,0 +1,103 @@
+.tasks-page {
+  color: white;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.page-header h1 {
+  font-size: 2.5rem;
+}
+
+.filter-buttons {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.filter-buttons button {
+  padding: 0.5rem 1rem;
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s;
+  font-weight: 500;
+}
+
+.filter-buttons button:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.filter-buttons button.active {
+  background: white;
+  color: #667eea;
+  border-color: white;
+}
+
+.tasks-table-container {
+  background: white;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
+}
+
+.tasks-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.tasks-table thead {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.tasks-table th {
+  padding: 1rem;
+  text-align: left;
+  font-weight: 600;
+}
+
+.tasks-table tbody tr {
+  border-bottom: 1px solid #e0e0e0;
+  transition: background 0.2s;
+}
+
+.tasks-table tbody tr:hover {
+  background: #f5f5f5;
+}
+
+.tasks-table td {
+  padding: 1rem;
+  color: #333;
+}
+
+.task-id {
+  font-family: monospace;
+  font-size: 0.9rem;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  color: white;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.no-tasks {
+  text-align: center;
+  padding: 3rem;
+  color: #999;
+}
+
+
+
