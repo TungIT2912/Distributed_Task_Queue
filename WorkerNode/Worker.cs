@@ -47,7 +47,7 @@ public class Worker : BackgroundService
         _mode = (workerConfig["Mode"] ?? "auto").Trim().ToLowerInvariant();
         _interactiveRequeueOnSkip = bool.TryParse(workerConfig["InteractiveRequeueOnSkip"], out var requeue) ? requeue : true;
         _interactiveDisableAutoClaim = bool.TryParse(workerConfig["InteractiveDisableAutoClaim"], out var disableAutoClaim) ? disableAutoClaim : false;
-        
+
         var queueConfig = _configuration.GetSection("TaskQueue");
         _streamName = queueConfig["StreamName"] ?? "task-queue";
         _consumerGroup = queueConfig["ConsumerGroup"] ?? "worker-group";
@@ -64,9 +64,27 @@ public class Worker : BackgroundService
         _logger.LogInformation("Worker {WorkerId} starting...", _workerId);
         _logger.LogInformation("Worker mode: {Mode}", _mode);
 
-         var hostAddress = _configuration.GetSection("Worker")["HostAddress"];
+        var workerUsername = _configuration["Worker:Username"];
+        var workerPassword = _configuration["Worker:Password"];
+
+        if (!string.IsNullOrEmpty(workerUsername))
+        {
+            var token = await _coordinatorClient.LoginAndGetTokenAsync(workerUsername, workerPassword);
+            if (token == null)
+            {
+                _logger.LogError("Worker failed to authenticate. Stopping.");
+                return;
+            }
+            _logger.LogInformation("Worker authenticated successfully");
+        }
+        else
+        {
+            _logger.LogWarning("No Worker:Username configured. Skipping authentication.");
+        }
+
+        var hostAddress = _configuration.GetSection("Worker")["HostAddress"];
         var port = int.Parse(_configuration.GetSection("Worker")["Port"] ?? "0");
-        
+
         var registeredWorker = await _coordinatorClient.RegisterWorkerAsync(_workerId, hostAddress, port);
         if (registeredWorker != null)
         {
@@ -78,13 +96,10 @@ public class Worker : BackgroundService
             _logger.LogWarning("Coordinator unavailable. Worker will continue processing tasks from Redis but coordinator features are disabled.");
         }
 
-        // Initialize Redis Stream consumer group
         await InitializeConsumerGroupAsync();
 
-        // Start heartbeat task
         var heartbeatTask = StartHeartbeatAsync(stoppingToken);
 
-        // Start processing tasks
         await ProcessTasksAsync(stoppingToken);
 
         await heartbeatTask;
@@ -226,13 +241,14 @@ public class Worker : BackgroundService
             return new List<StreamEntry>();
         }
 
-        var outer = (RedisResult[])result;
-        if (outer.Length < 2)
+        var outer = (RedisResult[]?)result;
+        if (outer == null || outer.Length < 2)
         {
             return new List<StreamEntry>();
         }
 
-        _autoClaimStartId = outer[0].ToString() ?? "0-0";
+        var nextId = outer[0].ToString();
+        _autoClaimStartId = nextId ?? "0-0";
 
         var claimedRaw = outer[1];
         if (claimedRaw.IsNull)
@@ -240,18 +256,23 @@ public class Worker : BackgroundService
             return new List<StreamEntry>();
         }
 
-        var claimed = (RedisResult[])claimedRaw;
+        var claimed = (RedisResult[]?)claimedRaw;
+        if (claimed == null)
+        {
+            return new List<StreamEntry>();
+        }
         var entries = new List<StreamEntry>(claimed.Length);
 
         foreach (var item in claimed)
         {
             if (item.IsNull) continue;
 
-            var entry = (RedisResult[])item;
-            if (entry.Length < 2) continue;
+            var entry = (RedisResult[]?)item;
+            if (entry == null || entry.Length < 2) continue;
 
-            var id = entry[0].ToString();
-            if (string.IsNullOrWhiteSpace(id)) continue;
+            var idValue = entry[0].ToString();
+            if (string.IsNullOrWhiteSpace(idValue)) continue;
+            var id = idValue!; // Already checked for null/whitespace
 
             var valuesObj = entry[1];
             if (valuesObj.IsNull)
@@ -263,25 +284,49 @@ public class Worker : BackgroundService
             // Handle both possible shapes:
             // - [field, value, field, value, ...]
             // - [[field,value],[field,value],...]
-            var valuesArr = (RedisResult[])valuesObj;
+            var valuesArr = (RedisResult[]?)valuesObj;
+            if (valuesArr == null)
+            {
+                entries.Add(new StreamEntry(id, Array.Empty<NameValueEntry>()));
+                continue;
+            }
             var nve = new List<NameValueEntry>();
 
-            if (valuesArr.Length > 0 && valuesArr[0].Type == ResultType.MultiBulk)
+            if (valuesArr.Length > 0)
             {
-                foreach (var pairObj in valuesArr)
+                // Check if first element is an array by trying to cast
+                var firstElement = valuesArr[0];
+                var firstAsArray = (RedisResult[]?)firstElement;
+
+                if (firstAsArray != null && firstAsArray.Length >= 2)
                 {
-                    var pair = (RedisResult[])pairObj;
-                    if (pair.Length >= 2)
+                    // Nested array format: [[field,value],[field,value],...]
+                    foreach (var pairObj in valuesArr)
                     {
-                        nve.Add(new NameValueEntry(pair[0].ToString(), pair[1].ToString()));
+                        var pair = (RedisResult[]?)pairObj;
+                        if (pair != null && pair.Length >= 2)
+                        {
+                            var pairField = pair[0].ToString();
+                            var pairValue = pair[1].ToString();
+                            if (pairField != null && pairValue != null)
+                            {
+                                nve.Add(new NameValueEntry(pairField, pairValue));
+                            }
+                        }
                     }
                 }
-            }
-            else
-            {
-                for (var i = 0; i + 1 < valuesArr.Length; i += 2)
+                else
                 {
-                    nve.Add(new NameValueEntry(valuesArr[i].ToString(), valuesArr[i + 1].ToString()));
+                    // Flat format: [field, value, field, value, ...]
+                    for (var i = 0; i + 1 < valuesArr.Length; i += 2)
+                    {
+                        var fieldName = valuesArr[i].ToString();
+                        var fieldValue = valuesArr[i + 1].ToString();
+                        if (fieldName != null && fieldValue != null)
+                        {
+                            nve.Add(new NameValueEntry(fieldName, fieldValue));
+                        }
+                    }
                 }
             }
 
@@ -353,13 +398,13 @@ public class Worker : BackgroundService
             if (result.Success)
             {
                 _logger.LogInformation("Task {TaskId} completed successfully", task.TaskId);
-                
+
                 // Store result in Redis
                 await StoreTaskResultAsync(db, task.TaskId, result);
 
                 // Mark done (effectively-once)
                 await db.StringSetAsync(doneKey, "1", TimeSpan.FromHours(_doneKeyTtlHours));
-                
+
                 // Update task status in coordinator
                 await _coordinatorClient.UpdateTaskStatusAsync(
                     task.TaskId,
@@ -372,10 +417,10 @@ public class Worker : BackgroundService
             else
             {
                 _logger.LogWarning("Task {TaskId} failed: {Error}", task.TaskId, result.ErrorMessage);
-                
+
                 // Handle retry logic
                 await HandleTaskFailureAsync(db, task, result);
-                
+
                 // Update task status in coordinator
                 await _coordinatorClient.UpdateTaskStatusAsync(
                     task.TaskId,
@@ -392,7 +437,7 @@ public class Worker : BackgroundService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error processing message {EntryId}", entryId);
-            
+
             // Don't acknowledge on error - let it be retried
             // The message will be claimed by another consumer after PENDING timeout
         }

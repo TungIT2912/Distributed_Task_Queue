@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "d:\\DistributedSystem\\Distributed_Task_Queue\\WorkerNode\\WorkerNode.csproj": {}
+    "D:\\DistributedSystem\\Distributed_Task_Queue\\WorkerNode\\WorkerNode.csproj": {}
   },
   "projects": {
-    "d:\\DistributedSystem\\Distributed_Task_Queue\\WorkerNode\\WorkerNode.csproj": {
+    "D:\\DistributedSystem\\Distributed_Task_Queue\\WorkerNode\\WorkerNode.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "d:\\DistributedSystem\\Distributed_Task_Queue\\WorkerNode\\WorkerNode.csproj",
+        "projectUniqueName": "D:\\DistributedSystem\\Distributed_Task_Queue\\WorkerNode\\WorkerNode.csproj",
         "projectName": "WorkerNode",
-        "projectPath": "d:\\DistributedSystem\\Distributed_Task_Queue\\WorkerNode\\WorkerNode.csproj",
+        "projectPath": "D:\\DistributedSystem\\Distributed_Task_Queue\\WorkerNode\\WorkerNode.csproj",
         "packagesPath": "C:\\Users\\Ron\\.nuget\\packages\\",
-        "outputPath": "d:\\DistributedSystem\\Distributed_Task_Queue\\WorkerNode\\obj\\",
+        "outputPath": "D:\\DistributedSystem\\Distributed_Task_Queue\\WorkerNode\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "D:\\CodeProgram\\VisualStudio\\VisualShare\\NuGetPackages"

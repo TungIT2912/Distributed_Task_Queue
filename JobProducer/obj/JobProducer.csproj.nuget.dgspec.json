@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "d:\\DistributedSystem\\Distributed_Task_Queue\\JobProducer\\JobProducer.csproj": {}
+    "D:\\DistributedSystem\\Distributed_Task_Queue\\JobProducer\\JobProducer.csproj": {}
   },
   "projects": {
-    "d:\\DistributedSystem\\Distributed_Task_Queue\\JobProducer\\JobProducer.csproj": {
+    "D:\\DistributedSystem\\Distributed_Task_Queue\\JobProducer\\JobProducer.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "d:\\DistributedSystem\\Distributed_Task_Queue\\JobProducer\\JobProducer.csproj",
+        "projectUniqueName": "D:\\DistributedSystem\\Distributed_Task_Queue\\JobProducer\\JobProducer.csproj",
         "projectName": "JobProducer",
-        "projectPath": "d:\\DistributedSystem\\Distributed_Task_Queue\\JobProducer\\JobProducer.csproj",
+        "projectPath": "D:\\DistributedSystem\\Distributed_Task_Queue\\JobProducer\\JobProducer.csproj",
         "packagesPath": "C:\\Users\\Ron\\.nuget\\packages\\",
-        "outputPath": "d:\\DistributedSystem\\Distributed_Task_Queue\\JobProducer\\obj\\",
+        "outputPath": "D:\\DistributedSystem\\Distributed_Task_Queue\\JobProducer\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "D:\\CodeProgram\\VisualStudio\\VisualShare\\NuGetPackages"

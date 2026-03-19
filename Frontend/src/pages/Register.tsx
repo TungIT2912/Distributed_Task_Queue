@@ -17,10 +17,9 @@ export default function Register() {
     e.preventDefault()
     setError('')
     setLoading(true)
-
     try {
       await register(username, email, password, role)
-      navigate('/portal')
+      navigate(role === 'Worker' ? '/worker' : '/portal')
     } catch (err: any) {
       setError(err.response?.data?.message || 'Registration failed. Please try again.')
     } finally {
@@ -31,9 +30,10 @@ export default function Register() {
   return (
     <div className="auth-container">
       <div className="auth-card">
-        <h2>Register</h2>
+        <h2>Create Account</h2>
         <form onSubmit={handleSubmit}>
           {error && <div className="error-message">{error}</div>}
+
           <div className="form-group">
             <label htmlFor="username">Username</label>
             <input
@@ -45,6 +45,7 @@ export default function Register() {
               data-testid="register-username"
             />
           </div>
+
           <div className="form-group">
             <label htmlFor="email">Email</label>
             <input
@@ -56,6 +57,7 @@ export default function Register() {
               data-testid="register-email"
             />
           </div>
+
           <div className="form-group">
             <label htmlFor="password">Password</label>
             <input
@@ -67,6 +69,7 @@ export default function Register() {
               data-testid="register-password"
             />
           </div>
+
           <div className="form-group">
             <label htmlFor="role">Register As</label>
             <select
@@ -75,22 +78,37 @@ export default function Register() {
               onChange={(e) => setRole(e.target.value as 'User' | 'Worker')}
               required
               data-testid="register-role"
-              style={{
-                width: '100%',
-                padding: '0.75rem',
-                border: '2px solid #e0e0e0',
-                borderRadius: '8px',
-                fontSize: '1rem',
-              }}
             >
-              <option value="User">User</option>
-              <option value="Worker">Worker</option>
+              <option value="User">👤 User — submit tasks</option>
+              <option value="Worker">⚙️ Worker — process tasks</option>
             </select>
           </div>
+
+          <div className={`role-info ${role === 'Worker' ? 'role-info--worker' : 'role-info--user'}`}>
+            {role === 'Worker' ? (
+              <>
+                <span className="role-info__icon">⚙️</span>
+                <div>
+                  <strong>Worker Account</strong>
+                  <p>Browse and claim tasks from other users. Your worker node will be registered automatically.</p>
+                </div>
+              </>
+            ) : (
+              <>
+                <span className="role-info__icon">👤</span>
+                <div>
+                  <strong>User Account</strong>
+                  <p>Submit tasks to the distributed queue and track their progress in real time.</p>
+                </div>
+              </>
+            )}
+          </div>
+
           <button type="submit" disabled={loading} data-testid="register-submit">
-            {loading ? 'Registering...' : 'Register'}
+            {loading ? 'Registering...' : `Register as ${role}`}
           </button>
         </form>
+
         <p className="auth-link">
           Already have an account? <Link to="/login">Login here</Link>
         </p>
@@ -98,6 +116,3 @@ export default function Register() {
     </div>
   )
 }
-
-
-

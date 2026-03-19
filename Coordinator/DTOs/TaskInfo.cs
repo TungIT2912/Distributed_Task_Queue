@@ -7,6 +7,7 @@ public class TaskInfo
     public string Status { get; set; } = string.Empty;
     public string TaskType { get; set; } = string.Empty;
     public int Priority { get; set; }
+    public string Payload { get; set; } = string.Empty;  
     public DateTime CreatedAt { get; set; }
     public DateTime? StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
@@ -15,4 +16,3 @@ public class TaskInfo
     public int RetryCount { get; set; }
     public string? WorkerId { get; set; }
 }
-

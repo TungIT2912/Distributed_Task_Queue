@@ -18,17 +18,17 @@ public class WorkerService
 
     public async Task<Worker?> RegisterWorkerAsync(WorkerRegistrationRequest request, int? userId = null)
     {
-        var existingWorker = await _context.Workers.FirstOrDefaultAsync(w => w.WorkerId == request.WorkerId);
-        
-        if (existingWorker != null)
+        var existing = await _context.Workers.FirstOrDefaultAsync(w => w.WorkerId == request.WorkerId);
+
+        if (existing != null)
         {
-            existingWorker.Status = "Active";
-            existingWorker.HostAddress = request.HostAddress;
-            existingWorker.Port = request.Port;
-            existingWorker.LastHeartbeat = DateTime.UtcNow;
-            existingWorker.UserId = userId;
+            existing.Status = "Active";
+            existing.HostAddress = request.HostAddress;
+            existing.Port = request.Port;
+            existing.LastHeartbeat = DateTime.UtcNow;
+            if (userId.HasValue) existing.UserId = userId;
             await _context.SaveChangesAsync();
-            return existingWorker;
+            return existing;
         }
 
         var worker = new Worker
@@ -44,46 +44,33 @@ public class WorkerService
 
         _context.Workers.Add(worker);
         await _context.SaveChangesAsync();
-
-        _logger.LogInformation("Worker {WorkerId} registered successfully", request.WorkerId);
+        _logger.LogInformation("Worker {WorkerId} registered as Active", request.WorkerId);
         return worker;
+    }
+
+    public async System.Threading.Tasks.Task SetInactiveAsync(string workerId)
+    {
+        var worker = await _context.Workers.FirstOrDefaultAsync(w => w.WorkerId == workerId);
+        if (worker == null) return;
+        worker.Status = "Inactive";
+        await _context.SaveChangesAsync();
+        _logger.LogInformation("Worker {WorkerId} set Inactive (logout)", workerId);
     }
 
     public async Task<bool> UpdateHeartbeatAsync(string workerId)
     {
         var worker = await _context.Workers.FirstOrDefaultAsync(w => w.WorkerId == workerId);
-        
-        if (worker == null)
-        {
-            return false;
-        }
-
+        if (worker == null) return false;
         worker.LastHeartbeat = DateTime.UtcNow;
-        worker.Status = "Active";
         await _context.SaveChangesAsync();
         return true;
     }
 
     public async Task<List<WorkerInfo>> GetActiveWorkersAsync()
     {
-        var cutoffTime = DateTime.UtcNow.AddMinutes(-5); 
-        
-        var staleWorkers = await _context.Workers
-            .Where(w => w.Status == "Active" && w.LastHeartbeat < cutoffTime)
-            .ToListAsync();
-        
-        foreach (var worker in staleWorkers)
-        {
-            worker.Status = "Inactive";
-        }
-        
-        if (staleWorkers.Any())
-        {
-            await _context.SaveChangesAsync();
-        }
-
-        var activeWorkers = await _context.Workers
-            .Where(w => w.Status == "Active")
+        var workers = await _context.Workers
+            .OrderByDescending(w => w.Status == "Active")
+            .ThenByDescending(w => w.LastHeartbeat)
             .Select(w => new WorkerInfo
             {
                 Id = w.Id,
@@ -98,27 +85,18 @@ public class WorkerService
             })
             .ToListAsync();
 
-        return activeWorkers;
+        return workers;
     }
 
     public async System.Threading.Tasks.Task IncrementTasksProcessedAsync(string workerId)
     {
         var worker = await _context.Workers.FirstOrDefaultAsync(w => w.WorkerId == workerId);
-        if (worker != null)
-        {
-            worker.TasksProcessed++;
-            await _context.SaveChangesAsync();
-        }
+        if (worker != null) { worker.TasksProcessed++; await _context.SaveChangesAsync(); }
     }
 
     public async System.Threading.Tasks.Task IncrementTasksFailedAsync(string workerId)
     {
         var worker = await _context.Workers.FirstOrDefaultAsync(w => w.WorkerId == workerId);
-        if (worker != null)
-        {
-            worker.TasksFailed++;
-            await _context.SaveChangesAsync();
-        }
+        if (worker != null) { worker.TasksFailed++; await _context.SaveChangesAsync(); }
     }
 }
-

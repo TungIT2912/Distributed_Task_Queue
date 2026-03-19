@@ -14,15 +14,25 @@ export default function Layout() {
           <h1>Distributed Task Queue</h1>
         </div>
         <div className="nav-links">
-          <Link to="/user" className={location.pathname === '/user' ? 'active' : ''}>
-            User
-          </Link>
-          {role === 'admin' && (
-            <Link to="/admin" className={location.pathname === '/admin' ? 'active' : ''}>
-              Admin
+          {role === 'user' && (
+            <Link to="/user" className={location.pathname === '/user' ? 'active' : ''}>
+              User
             </Link>
           )}
-          {(role === 'admin' || role === 'worker') && (
+          {role === 'admin' && (
+            <>
+              <Link to="/admin" className={location.pathname === '/admin' ? 'active' : ''}>
+                Dashboard
+              </Link>
+              <Link to="/admin-workers" className={location.pathname === '/admin-workers' ? 'active' : ''}>
+                Workers
+              </Link>
+              <Link to="/worker" className={location.pathname === '/worker' ? 'active' : ''}>
+              Tasks
+            </Link>
+            </>
+          )}
+          {role === 'worker' && (
             <Link to="/worker" className={location.pathname === '/worker' ? 'active' : ''}>
               Worker
             </Link>
@@ -41,6 +51,3 @@ export default function Layout() {
     </div>
   )
 }
-
-
-

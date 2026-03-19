@@ -83,7 +83,6 @@ while (true)
     {
         if (token != null)
         {
-            // Preferred path: submit via Coordinator so MySQL tracking is correct
             using var httpClient = new HttpClient();
             httpClient.DefaultRequestHeaders.Authorization =
                 new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);

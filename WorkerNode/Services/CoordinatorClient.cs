@@ -7,6 +7,14 @@ public class CoordinatorClient
     private readonly HttpClient _httpClient;
     private readonly ILogger<CoordinatorClient> _logger;
     private readonly string _baseUrl;
+    private string? _jwtToken;
+
+    public void SetAuthToken(string token)
+    {
+        _jwtToken = token;
+        _httpClient.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+    }
 
     public CoordinatorClient(HttpClient httpClient, IConfiguration configuration, ILogger<CoordinatorClient> logger)
     {
@@ -15,23 +23,43 @@ public class CoordinatorClient
         _baseUrl = configuration.GetSection("Coordinator")["BaseUrl"] ?? "http://localhost:5000";
     }
 
+    public async Task<string?> LoginAndGetTokenAsync(string username, string password)
+    {
+        try 
+        {
+            var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/api/auth/login", new
+            {
+                Username = username,
+                Password = password
+            });
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogError("Authentication failed with status {Status}", response.StatusCode);
+                return null;
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<AuthResponse>();
+            if (result?.Token != null)
+            {
+                SetAuthToken(result.Token);
+            }
+            return result?.Token;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception during worker authentication");
+            return null;
+        }
+    }
+
     public async Task<WorkerInfo?> RegisterWorkerAsync(string workerId, string? hostAddress, int port)
     {
         try
         {
-            var request = new
-            {
-                WorkerId = workerId,
-                HostAddress = hostAddress,
-                Port = port
-            };
-
+            var request = new { WorkerId = workerId, HostAddress = hostAddress, Port = port };
             var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/api/workers/register", request);
-            if (!response.IsSuccessStatusCode)
-            {
-                return null;
-            }
-
+            if (!response.IsSuccessStatusCode) return null;
             return await response.Content.ReadFromJsonAsync<WorkerInfo>();
         }
         catch (Exception ex)
@@ -133,3 +161,10 @@ public class WorkerInfo
     public int TasksFailed { get; set; }
 }
 
+public class AuthResponse
+{
+    public string? Token { get; set; }
+    public string? Username { get; set; }
+    public string? Role { get; set; }
+    public DateTime ExpiresAt { get; set; }
+}

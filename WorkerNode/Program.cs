@@ -4,20 +4,21 @@ using WorkerNode.Services;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-// Configure Redis
 var redisConnectionString = builder.Configuration.GetSection("Redis")["ConnectionString"] ?? "localhost:6379";
 builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
-    StackExchange.Redis.ConnectionMultiplexer.Connect(redisConnectionString));
+{
+    var options = ConfigurationOptions.Parse(redisConnectionString);
+    options.AbortOnConnectFail = false;
+    options.ConnectTimeout = 5000;
+    options.SyncTimeout = 5000;
+    options.ReconnectRetryPolicy = new LinearRetry(500);
+    return StackExchange.Redis.ConnectionMultiplexer.Connect(options);
+});
 
-// Configure HttpClient for Coordinator communication
 builder.Services.AddHttpClient();
 
-// Register services as Singleton (required for BackgroundService/IHostedService)
-// TaskProcessor is stateless, so Singleton is safe
 builder.Services.AddSingleton<TaskProcessor>();
 
-// CoordinatorClient needs to be Singleton for BackgroundService, but uses HttpClient
-// We'll create it using IHttpClientFactory to get a properly configured HttpClient
 builder.Services.AddSingleton<CoordinatorClient>(sp =>
 {
     var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();

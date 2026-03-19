@@ -15,10 +15,14 @@ export default function Login() {
     e.preventDefault()
     setError('')
     setLoading(true)
-
     try {
       await login(username, password)
-      navigate('/portal')
+      const storedUser = localStorage.getItem('user')
+      const userData = storedUser ? JSON.parse(storedUser) : null
+      const role = userData?.role?.toLowerCase()
+      if (role === 'admin') navigate('/admin')
+      else if (role === 'worker') navigate('/worker')
+      else navigate('/user')
     } catch (err: any) {
       setError(err.response?.data?.message || 'Login failed. Please check your credentials.')
     } finally {
@@ -65,6 +69,3 @@ export default function Login() {
     </div>
   )
 }
-
-
-

@@ -33,7 +33,7 @@ export default function Dashboard() {
         api.get('/tasks?limit=1000'),
       ])
 
-      const workers = workersRes.data || []
+      const workers = (workersRes.data || []).filter((w: any) => w.status === 'Active')
       const tasks = tasksRes.data || []
 
       setStats({

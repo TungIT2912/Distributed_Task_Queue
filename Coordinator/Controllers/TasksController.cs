@@ -80,24 +80,27 @@ public class TasksController : ControllerBase
         [FromQuery] string? status = null,
         [FromQuery] int limit = 100)
     {
-        int? userId = null;
-        if (User.Identity?.IsAuthenticated == true)
-        {
-            var userIdClaim = User.FindFirst("UserId")?.Value;
-            if (int.TryParse(userIdClaim, out var id))
-            {
-                userId = id;
-            }
-        }
-
-        // Admin can see all tasks (no user filter)
         if (User.IsInRole("Admin"))
         {
-            userId = null;
+            var allTasks = await taskService.GetTasksAsync(null, status, limit);
+            return Ok(allTasks);
         }
 
-        var tasks = await taskService.GetTasksAsync(userId, status, limit);
-        return Ok(tasks);
+        if (User.IsInRole("Worker"))
+        {
+            var workerIdClaim = User.FindFirst("UserId")?.Value;
+            int.TryParse(workerIdClaim, out var workerUserId);
+
+            var tasks = await taskService.GetTasksForWorkerAsync(workerUserId, status, limit);
+            return Ok(tasks);
+        }
+
+        var userIdClaim = User.FindFirst("UserId")?.Value;
+        if (!int.TryParse(userIdClaim, out var userId))
+            return Unauthorized();
+
+        var userTasks = await taskService.GetTasksAsync(userId, status, limit);
+        return Ok(userTasks);
     }
 
     [Authorize]
@@ -128,40 +131,75 @@ public class TasksController : ControllerBase
     }
 
     [HttpPut("{taskId}/status")]
+    [Authorize(Roles = "Worker")]  
     public async Task<IActionResult> UpdateStatus(
         [FromRoute] string taskId,
         [FromBody] UpdateTaskStatusRequest request,
         [FromServices] TaskService taskService,
-        [FromServices] ApplicationDbContext _)
+        [FromServices] ApplicationDbContext db)
     {
-        var task = await taskService.UpdateTaskStatusAsync(
-            taskId,
-            request.Status,
-            request.Result,
-            request.ErrorMessage,
-            request.WorkerId,
-            request.WorkerKey);
-
-        if (task == null)
-        {
+        var existing = await taskService.GetTaskByTaskIdAsync(taskId);
+        if (existing == null)
             return NotFound(new { message = "Task not found" });
+
+        var allowedTransitions = new Dictionary<string, string[]>
+        {
+            ["Pending"]    = new[] { "Processing" },
+            ["Processing"] = new[] { "Completed", "Failed" },
+            ["Failed"]     = new[] { "Pending" },      
+            ["Completed"]  = Array.Empty<string>(),     
+        };
+
+        if (!allowedTransitions.TryGetValue(existing.Status, out var allowed)
+            || !allowed.Contains(request.Status))
+        {
+            return BadRequest(new
+            {
+                message = $"Cannot transition from '{existing.Status}' to '{request.Status}'",
+                currentStatus = existing.Status,
+                requestedStatus = request.Status
+            });
         }
 
-        return Ok(new TaskInfo
+      
+        if (!User.IsInRole("Worker") && !User.IsInRole("Admin"))
         {
-            Id = task.Id,
-            TaskId = task.TaskId,
-            Status = task.Status,
-            TaskType = task.TaskType,
-            Priority = task.Priority,
-            CreatedAt = task.CreatedAt,
-            StartedAt = task.StartedAt,
-            CompletedAt = task.CompletedAt,
-            Result = task.Result,
-            ErrorMessage = task.ErrorMessage,
-            RetryCount = task.RetryCount,
-            WorkerId = task.Worker?.WorkerId
-        });
+            return Forbid();
+        }
+
+        try
+        {
+            var task = await taskService.UpdateTaskStatusAsync(
+                taskId,
+                request.Status,
+                request.Result,
+                request.ErrorMessage,
+                request.WorkerId,
+                request.WorkerKey);
+
+            if (task == null)
+                return NotFound(new { message = "Task not found" });
+
+            return Ok(new TaskInfo
+            {
+                Id = task.Id,
+                TaskId = task.TaskId,
+                Status = task.Status,
+                TaskType = task.TaskType,
+                Priority = task.Priority,
+                CreatedAt = task.CreatedAt,
+                StartedAt = task.StartedAt,
+                CompletedAt = task.CompletedAt,
+                Result = task.Result,
+                ErrorMessage = task.ErrorMessage,
+                RetryCount = task.RetryCount,
+                WorkerId = task.Worker?.WorkerId
+            });
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 }
 

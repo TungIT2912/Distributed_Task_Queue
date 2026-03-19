@@ -36,6 +36,6 @@ public class Worker
     public virtual User? User { get; set; }
 
     // Navigation properties
-    public virtual ICollection<Task> Tasks { get; set; } = new List<Task>();
+    public virtual ICollection<Coordinator.Models.Task> Tasks { get; set; } = new List<Coordinator.Models.Task>();
 }
 
