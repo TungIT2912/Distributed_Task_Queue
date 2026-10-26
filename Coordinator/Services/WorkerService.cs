@@ -16,7 +16,7 @@ public class WorkerService
         _logger = logger;
     }
 
-    public async Task<Worker?> RegisterWorkerAsync(WorkerRegistrationRequest request, int? userId = null)
+    public async Task<Worker?> RegisterWorkerAsync(RegisterWorkerRequest request, int? userId = null)
     {
         var existing = await _context.Workers.FirstOrDefaultAsync(w => w.WorkerId == request.WorkerId);
 
