@@ -24,12 +24,7 @@ public class WorkersController : ControllerBase
         var userIdClaim = User.FindFirst("UserId")?.Value;
         var userId = userIdClaim != null ? int.Parse(userIdClaim) : (int?)null;
 
-        var worker = await _workerService.RegisterWorkerAsync(new WorkerRegistrationRequest
-        {
-            WorkerId = request.WorkerId,
-            HostAddress = request.HostAddress,
-            Port = request.Port
-        }, userId);
+        var worker = await _workerService.RegisterWorkerAsync(request, userId);
 
         return Ok(worker);
     }

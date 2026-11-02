@@ -1,5 +1,4 @@
 using System.Text.Json;
-using Coordinator.Data;
 using Coordinator.DTOs;
 using Coordinator.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -135,8 +134,7 @@ public class TasksController : ControllerBase
     public async Task<IActionResult> UpdateStatus(
         [FromRoute] string taskId,
         [FromBody] UpdateTaskStatusRequest request,
-        [FromServices] TaskService taskService,
-        [FromServices] ApplicationDbContext db)
+        [FromServices] TaskService taskService)
     {
         var existing = await taskService.GetTaskByTaskIdAsync(taskId);
         if (existing == null)
