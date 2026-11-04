@@ -37,6 +37,53 @@ export default function UserPortal() {
   const [taskType, setTaskType] = useState('Default')
   const [priority, setPriority] = useState(0)
   const [payload, setPayload] = useState(payloadSamples['Default'])
+  const [advancedMode, setAdvancedMode] = useState(false)
+  const [formData, setFormData] = useState({
+    operation: 'add', a: '5', b: '3', inputData: '1, 2, 3',
+    action: 'sum', to: '', subject: '', body: '', data: ''
+  })
+  const updateField = (field: keyof typeof formData, value: string) =>
+    setFormData(prev => ({ ...prev, [field]: value }))
+
+  const buildPayload = (): string => {
+    if (advancedMode) {
+      const parsed: unknown = JSON.parse(payload)
+      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('Payload must be a JSON object.')
+      }
+      return payload
+    }
+    switch (taskType) {
+      case 'Compute': {
+        if (!formData.a.trim() || !formData.b.trim())
+          throw new Error('Enter both numbers.')
+        const a = Number(formData.a), b = Number(formData.b)
+        if (!Number.isFinite(a) || !Number.isFinite(b))
+          throw new Error('Enter valid numbers.')
+        if (formData.operation === 'divide' && b === 0)
+          throw new Error('Cannot divide by zero.')
+        return JSON.stringify({ operation: formData.operation, a, b })
+      }
+      case 'DataProcessing': {
+        const parts = formData.inputData.split(',').map(x => x.trim())
+        if (parts.some(x => !x || !Number.isFinite(Number(x))))
+          throw new Error('Enter at least one valid number, separated by commas.')
+        return JSON.stringify({ inputData: parts.map(Number), action: formData.action })
+      }
+      case 'Email': {
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.to.trim()))
+          throw new Error('Enter a valid recipient email.')
+        if (!formData.subject.trim() || !formData.body.trim())
+          throw new Error('Subject and message are required.')
+        return JSON.stringify({ to: formData.to.trim(), subject: formData.subject, body: formData.body })
+      }
+      case 'Default':
+        if (!formData.data.trim()) throw new Error('Enter task data.')
+        return JSON.stringify({ data: formData.data })
+      default:
+        throw new Error('Unsupported task type.')
+    }
+  }
   const [submitting, setSubmitting] = useState(false)
   const [submitMsg, setSubmitMsg] = useState<string | null>(null)
   const [tasks, setTasks] = useState<Task[]>([])
@@ -63,17 +110,23 @@ export default function UserPortal() {
 
   const submitTask = async (e: React.FormEvent) => {
     e.preventDefault()
-    setSubmitting(true)
     setSubmitMsg(null)
-    try {
-      JSON.parse(payload)
-    } catch {
-      setSubmitMsg('Invalid JSON payload!')
-      setSubmitting(false)
+    if (!Number.isInteger(priority) || priority < 0 || priority > 10) {
+      setSubmitMsg('Priority must be between 0 and 10.')
       return
     }
+    let generatedPayload: string
     try {
-      const res = await api.post('/tasks/submit', { taskType, priority, payload })
+      generatedPayload = buildPayload()
+    } catch (err) {
+      setSubmitMsg(err instanceof Error ? err.message : 'Invalid task data.')
+      return
+    }
+    setSubmitting(true)
+    try {
+      const res = await api.post('/tasks/submit', {
+        taskType, priority, payload: generatedPayload
+      })
       setSubmitMsg(`✅ Submitted task ${res.data.taskId.slice(0, 8)}...`)
       await loadTasks()
       setCurrentPage(1)
@@ -105,27 +158,89 @@ export default function UserPortal() {
         <div className="card">
           <h2>Submit Task</h2>
           <form onSubmit={submitTask} className="form">
-            {submitMsg && <div className="note">{submitMsg}</div>}
+            {submitMsg && <div className="note" role="status">{submitMsg}</div>}
             <label>
               Task Type
-              <select value={taskType} onChange={(e) => handleTaskTypeChange(e.target.value)}>
+              <select value={taskType} onChange={e => handleTaskTypeChange(e.target.value)}>
                 <option value="Compute">Compute</option>
-                <option value="DataProcessing">DataProcessing</option>
-                <option value="Email">Email</option>
+                <option value="DataProcessing">Data Processing</option>
+                <option value="Email">Email (Simulation)</option>
                 <option value="Default">Default</option>
               </select>
             </label>
-            <label>
-              Priority (0-10)
-              <input
-                type="number" min={0} max={10} value={priority}
-                onChange={(e) => setPriority(parseInt(e.target.value || '0', 10))}
-              />
+
+            {!advancedMode && taskType === 'Compute' && <>
+              <label>Operation
+                <select value={formData.operation} onChange={e => updateField('operation', e.target.value)}>
+                  <option value="add">Addition (+)</option>
+                  <option value="subtract">Subtraction (-)</option>
+                  <option value="multiply">Multiplication (×)</option>
+                  <option value="divide">Division (÷)</option>
+                </select>
+              </label>
+              <label>Number A
+                <input type="number" step="any" required value={formData.a}
+                  onChange={e => updateField('a', e.target.value)} />
+              </label>
+              <label>Number B
+                <input type="number" step="any" required value={formData.b}
+                  onChange={e => updateField('b', e.target.value)} />
+              </label>
+            </>}
+
+            {!advancedMode && taskType === 'DataProcessing' && <>
+              <label>Numbers (comma separated)
+                <input required placeholder="1, 2, 3" value={formData.inputData}
+                  onChange={e => updateField('inputData', e.target.value)} />
+              </label>
+              <label>Action
+                <select value={formData.action} onChange={e => updateField('action', e.target.value)}>
+                  <option value="sum">Sum</option>
+                  <option value="average">Average</option>
+                  <option value="max">Maximum</option>
+                  <option value="min">Minimum</option>
+                </select>
+              </label>
+            </>}
+
+            {!advancedMode && taskType === 'Email' && <>
+              <p style={{ color: '#805600', fontSize: '0.9rem' }}>
+                This task simulates sending an email; no real email is sent.
+              </p>
+              <label>Recipient Email
+                <input type="email" required placeholder="user@example.com" value={formData.to}
+                  onChange={e => updateField('to', e.target.value)} />
+              </label>
+              <label>Subject
+                <input required value={formData.subject}
+                  onChange={e => updateField('subject', e.target.value)} />
+              </label>
+              <label>Message
+                <textarea required rows={4} value={formData.body}
+                  onChange={e => updateField('body', e.target.value)} />
+              </label>
+            </>}
+
+            {!advancedMode && taskType === 'Default' &&
+              <label>Task Data
+                <textarea required rows={4} placeholder="Enter your task data"
+                  value={formData.data} onChange={e => updateField('data', e.target.value)} />
+              </label>
+            }
+
+            <label>Priority: {priority} / 10
+              <input type="range" min={0} max={10} step={1} value={priority}
+                onChange={e => setPriority(Number(e.target.value))} />
             </label>
-            <label>
-              Payload (JSON)
-              <textarea value={payload} onChange={(e) => setPayload(e.target.value)} rows={6} />
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <input type="checkbox" checked={advancedMode}
+                onChange={e => setAdvancedMode(e.target.checked)}
+                style={{ width: 'auto' }} />
+              Advanced Mode (Raw JSON)
             </label>
+            {advancedMode && <label>Payload (JSON)
+              <textarea value={payload} onChange={e => setPayload(e.target.value)} rows={6} />
+            </label>}
             <button type="submit" disabled={submitting}>
               {submitting ? 'Submitting...' : 'Submit Task'}
             </button>
