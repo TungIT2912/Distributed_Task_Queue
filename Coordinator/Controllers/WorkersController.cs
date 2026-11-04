@@ -2,6 +2,7 @@ using Coordinator.DTOs;
 using Coordinator.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 
 namespace Coordinator.Controllers;
 
@@ -34,8 +35,18 @@ public class WorkersController : ControllerBase
     [Authorize]
     public async Task<IActionResult> WorkerLogout([FromRoute] string workerId)
     {
-        await _workerService.SetInactiveAsync(workerId);
-        return Ok(new { message = "Worker set to inactive" });
+        var userIdClaim = User.FindFirst("UserId")?.Value;
+
+        if (!int.TryParse(userIdClaim, out var userId))
+            return Unauthorized();
+
+        var success = await _workerService.SetInactiveIfOwnedAsync(
+            workerId, userId);
+
+        if (!success)
+            return NotFound(new { message = "Worker not found or not owned by user" });
+
+        return Ok(new { message = "Worker offline" });
     }
 
     // Heartbeat — only used during active task processing

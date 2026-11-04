@@ -10,6 +10,9 @@ public class WorkerService
     private readonly ApplicationDbContext _context;
     private readonly ILogger<WorkerService> _logger;
 
+    private static readonly TimeSpan HeartbeatTimeout =
+    TimeSpan.FromSeconds(60);
+
     public WorkerService(ApplicationDbContext context, ILogger<WorkerService> logger)
     {
         _context = context;
@@ -59,23 +62,34 @@ public class WorkerService
 
     public async Task<bool> UpdateHeartbeatAsync(string workerId)
     {
-        var worker = await _context.Workers.FirstOrDefaultAsync(w => w.WorkerId == workerId);
-        if (worker == null) return false;
+        var worker = await _context.Workers
+            .FirstOrDefaultAsync(w => w.WorkerId == workerId);
+
+        if (worker == null || worker.Status != "Active")
+            return false;
+
         worker.LastHeartbeat = DateTime.UtcNow;
         await _context.SaveChangesAsync();
+
         return true;
     }
 
     public async Task<List<WorkerInfo>> GetActiveWorkersAsync()
     {
+        var now = DateTime.UtcNow;
+        var cutoff = now - HeartbeatTimeout;
+
         var workers = await _context.Workers
-            .OrderByDescending(w => w.Status == "Active")
-            .ThenByDescending(w => w.LastHeartbeat)
+            .OrderByDescending(w => w.LastHeartbeat)
             .Select(w => new WorkerInfo
             {
                 Id = w.Id,
                 WorkerId = w.WorkerId,
-                Status = w.Status,
+                Status = w.LastHeartbeat.HasValue &&
+                        w.LastHeartbeat.Value >= cutoff &&
+                        w.Status == "Active"
+                    ? "Active"
+                    : "Offline",
                 HostAddress = w.HostAddress,
                 Port = w.Port,
                 RegisteredAt = w.RegisteredAt,
@@ -87,7 +101,6 @@ public class WorkerService
 
         return workers;
     }
-
     public async System.Threading.Tasks.Task IncrementTasksProcessedAsync(string workerId)
     {
         var worker = await _context.Workers.FirstOrDefaultAsync(w => w.WorkerId == workerId);
@@ -99,4 +112,22 @@ public class WorkerService
         var worker = await _context.Workers.FirstOrDefaultAsync(w => w.WorkerId == workerId);
         if (worker != null) { worker.TasksFailed++; await _context.SaveChangesAsync(); }
     }
+
+    public async Task<bool> SetInactiveIfOwnedAsync(
+        string workerId, int userId)
+    {
+        var worker = await _context.Workers
+            .FirstOrDefaultAsync(w =>
+                w.WorkerId == workerId &&
+                w.UserId == userId);
+
+        if (worker == null)
+            return false;
+
+        worker.Status = "Inactive";
+        await _context.SaveChangesAsync();
+
+        return true;
+    }
+
 }
