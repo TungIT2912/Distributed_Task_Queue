@@ -12,11 +12,7 @@ namespace Coordinator.Controllers;
 public class TasksController : ControllerBase
 {
     private readonly IConfiguration _configuration;
-
-    public TasksController(IConfiguration configuration)
-    {
-        _configuration = configuration;
-    }
+    public TasksController(IConfiguration configuration) => _configuration = configuration;
 
     [Authorize]
     [HttpPost("submit")]
@@ -26,21 +22,19 @@ public class TasksController : ControllerBase
         [FromServices] IConnectionMultiplexer redis)
     {
         var userIdClaim = User.FindFirst("UserId")?.Value;
-        if (!int.TryParse(userIdClaim, out var userId))
-        {
-            return Unauthorized();
-        }
+        if (!int.TryParse(userIdClaim, out var userId)) return Unauthorized();
+
+        var validationError = TaskPayloadValidator.Validate(request.TaskType, request.Payload);
+        if (validationError != null) return BadRequest(new { message = validationError });
 
         var streamName = _configuration.GetSection("TaskQueue")["StreamName"] ?? "task-queue";
-
         var taskId = Guid.NewGuid().ToString();
         var createdAt = DateTime.UtcNow;
-
         var taskMessage = new
         {
             TaskId = taskId,
-            TaskType = request.TaskType ?? "Default",
-            Payload = request.Payload ?? "{}",
+            TaskType = request.TaskType,
+            Payload = request.Payload,
             Priority = request.Priority,
             CreatedAt = createdAt
         };
@@ -79,27 +73,17 @@ public class TasksController : ControllerBase
         [FromQuery] string? status = null,
         [FromQuery] int limit = 100)
     {
+        limit = Math.Clamp(limit, 1, 1000);
         if (User.IsInRole("Admin"))
-        {
-            var allTasks = await taskService.GetTasksAsync(null, status, limit);
-            return Ok(allTasks);
-        }
-
-        if (User.IsInRole("Worker"))
-        {
-            var workerIdClaim = User.FindFirst("UserId")?.Value;
-            int.TryParse(workerIdClaim, out var workerUserId);
-
-            var tasks = await taskService.GetTasksForWorkerAsync(workerUserId, status, limit);
-            return Ok(tasks);
-        }
+            return Ok(await taskService.GetTasksAsync(null, status, limit));
 
         var userIdClaim = User.FindFirst("UserId")?.Value;
-        if (!int.TryParse(userIdClaim, out var userId))
-            return Unauthorized();
+        if (!int.TryParse(userIdClaim, out var userId)) return Unauthorized();
 
-        var userTasks = await taskService.GetTasksAsync(userId, status, limit);
-        return Ok(userTasks);
+        if (User.IsInRole("Worker"))
+            return Ok(await taskService.GetTasksForWorkerAsync(userId, status, limit));
+
+        return Ok(await taskService.GetTasksAsync(userId, status, limit));
     }
 
     [Authorize]
@@ -108,76 +92,73 @@ public class TasksController : ControllerBase
         [FromRoute] string taskId,
         [FromServices] TaskService taskService)
     {
-        int? userId = null;
-        if (User.Identity?.IsAuthenticated == true)
+        var task = await taskService.GetTaskByTaskIdAsync(taskId);
+        if (task == null) return NotFound();
+
+        if (!User.IsInRole("Admin"))
         {
             var userIdClaim = User.FindFirst("UserId")?.Value;
-            if (int.TryParse(userIdClaim, out var id))
+            if (!int.TryParse(userIdClaim, out var userId)) return Unauthorized();
+            if (User.IsInRole("Worker"))
             {
-                userId = id;
+                var visibleTasks = await taskService.GetTasksForWorkerAsync(userId, limit: 1000);
+                if (!visibleTasks.Any(t => t.TaskId == taskId)) return NotFound();
             }
+            else if (task.UserId != userId) return NotFound();
         }
 
-        var tasks = await taskService.GetTasksAsync(userId);
-        var task = tasks.FirstOrDefault(t => t.TaskId == taskId);
-
-        if (task == null)
+        return Ok(new TaskInfo
         {
-            return NotFound();
-        }
-
-        return Ok(task);
+            Id = task.Id,
+            TaskId = task.TaskId,
+            Status = task.Status,
+            TaskType = task.TaskType,
+            Priority = task.Priority,
+            Payload = task.Payload,
+            CreatedAt = task.CreatedAt,
+            StartedAt = task.StartedAt,
+            CompletedAt = task.CompletedAt,
+            Result = task.Result,
+            ErrorMessage = task.ErrorMessage,
+            RetryCount = task.RetryCount,
+            WorkerId = task.Worker?.WorkerId
+        });
     }
 
     [HttpPut("{taskId}/status")]
-    [Authorize(Roles = "Worker")]  
+    [Authorize(Roles = "Worker")]
     public async Task<IActionResult> UpdateStatus(
         [FromRoute] string taskId,
         [FromBody] UpdateTaskStatusRequest request,
         [FromServices] TaskService taskService)
     {
         var existing = await taskService.GetTaskByTaskIdAsync(taskId);
-        if (existing == null)
-            return NotFound(new { message = "Task not found" });
+        if (existing == null) return NotFound(new { message = "Task not found" });
 
         var allowedTransitions = new Dictionary<string, string[]>
         {
-            ["Pending"]    = new[] { "Processing" },
+            ["Pending"] = new[] { "Processing" },
             ["Processing"] = new[] { "Completed", "Failed" },
-            ["Failed"]     = new[] { "Pending" },      
-            ["Completed"]  = Array.Empty<string>(),     
+            ["Failed"] = new[] { "Pending" },
+            ["Completed"] = Array.Empty<string>()
         };
-
         if (!allowedTransitions.TryGetValue(existing.Status, out var allowed)
             || !allowed.Contains(request.Status))
-        {
             return BadRequest(new
             {
                 message = $"Cannot transition from '{existing.Status}' to '{request.Status}'",
                 currentStatus = existing.Status,
                 requestedStatus = request.Status
             });
-        }
 
-      
-        if (!User.IsInRole("Worker") && !User.IsInRole("Admin"))
-        {
-            return Forbid();
-        }
-
+        // TODO: Verify the authenticated worker owns the task before updating status.
+        // TODO: Enforce transitions atomically in the service/database to avoid races.
         try
         {
             var task = await taskService.UpdateTaskStatusAsync(
-                taskId,
-                request.Status,
-                request.Result,
-                request.ErrorMessage,
-                request.WorkerId,
-                request.WorkerKey);
-
-            if (task == null)
-                return NotFound(new { message = "Task not found" });
-
+                taskId, request.Status, request.Result,
+                request.ErrorMessage, request.WorkerId, request.WorkerKey);
+            if (task == null) return NotFound(new { message = "Task not found" });
             return Ok(new TaskInfo
             {
                 Id = task.Id,
@@ -200,4 +181,3 @@ public class TasksController : ControllerBase
         }
     }
 }
-

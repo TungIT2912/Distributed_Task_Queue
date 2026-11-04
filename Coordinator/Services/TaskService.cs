@@ -95,7 +95,7 @@ public class TaskService
         Status = t.Status,
         TaskType = t.TaskType,
         Priority = t.Priority,
-        Payload = t.Payload,         
+        Payload = t.Payload,
         CreatedAt = t.CreatedAt,
         StartedAt = t.StartedAt,
         CompletedAt = t.CompletedAt,
